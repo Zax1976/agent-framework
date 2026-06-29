@@ -64,6 +64,13 @@ explicit human-confirmation gate before each mutating step** — especially any 
 or destructive DB op. Keep mutating phases in separate, explicitly-gated workflows rather
 than one auto-running chain.
 
+**Relay-approval failure mode (confirmed 2026-06-29):** A coordinator relaying "the user
+approved" to a subagent is NOT user consent. The `db-migration` subagent twice correctly
+refused a prod `--apply` on this basis. The rule: the human-approval gate lives at the layer
+that directly received the user's input. A mutating step executes there — or requires a
+user-confirmed token explicitly passed down. This is the single most important guardrail to
+encode before any Phase-4 mutating expansion.
+
 ## Capture-learnings (the achievable self-improvement loop)
 This is the practical mimic of a self-learning agent — **experiential memory + reusable
 skills, not weight updates.**

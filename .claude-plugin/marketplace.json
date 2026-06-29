@@ -5,7 +5,7 @@
     {
       "name": "agent-framework",
       "source": "./",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "description": "Portable multi-agent dev framework: a read-only review fan-out (security + testing) coordinated by a dynamic workflow, plus generalist builder/content agents and a propose-only retro loop. Project-specific facts come from the consuming repo's CLAUDE.md, not from the agents."
     }
   ]

@@ -1,0 +1,39 @@
+# <PROJECT> — Architectural Memory
+
+This file is loaded automatically by Claude Code at session start, and is the source of
+truth the agent-framework agents read for project-specific facts. **Keep it accurate and
+terse.** The generic agents describe HOW to work; this file supplies WHAT.
+
+## Product
+[What it is, who it's for, pricing/plans if relevant.]
+
+## Tech stack
+[Languages, frameworks, DB, hosting, package manager, key services.]
+
+## Load-bearing rules (the easy-to-miss landmines)
+> The `dev` and `security-reviewer` agents read this section first. List the
+> non-obvious rules whose violation breaks correctness, security, or economics.
+- **Security / access-control model:** [where auth lives; tenant-isolation invariant;
+  how trusted identity must flow; the "never trust the request body for X" rule.]
+- **Determinism / performance contracts:** [any byte-identical / caching / latency
+  contract that must not break.]
+- **Version pins / generated artifacts:** [constants + their test pins that must move
+  together; generated files and how they're regenerated.]
+- **Input validation:** [schema conventions and where schemas live.]
+- **Forbidden patterns:** [e.g. "no ORM", "no direct X".]
+
+## Testing
+- Commands: [full suite] · [filtered] · [typecheck] · [lint].
+- **Mandatory re-runs:** [e.g. "after touching <subsystem>, re-run <milestone script>".]
+- [Any environment/mount caveat + workaround.]
+
+## Database / migrations (if applicable)
+- [DB stack; connection-string rule; environment marker + destructive-op gate;
+  identifier divergence dev vs prod; privileged-function permission pattern.]
+
+## Deploy / environments
+- [Environments and what's live; the deploy-state verification command; any manual-deploy
+  surface; account/hosting guardrails; secret rotation locations.]
+
+## Decision records (ADR index)
+- [List ADRs here as you add them — one conceptual decision per file.]

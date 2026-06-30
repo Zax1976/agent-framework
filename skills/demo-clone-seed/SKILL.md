@@ -1,7 +1,7 @@
 ---
 name: demo-clone-seed
-version: 1.0.0
-description: Checklist for cloning a production property into a safely redacted demo or seed fixture. Prevents PII leakage, over-redaction of public-business data, and false confidence on 0-hit scans.
+version: 1.1.0
+description: Checklist for cloning a production property into a safely redacted demo or seed fixture. Prevents PII leakage (incl. owner names + brand identity), over-redaction of public-business data, and false confidence on 0-hit scans.
 tags: [ops, data, redaction, demo, seed]
 ---
 
@@ -12,7 +12,7 @@ by cloning real property content. Follow all gates in order — do not skip.
 
 ## Why this exists
 
-Three failure modes captured from a real run (2026-06-29, cottagesconcierge-prod):
+Eight failure modes captured from real runs (all 2026-06-29/30, cottagesconcierge-prod):
 
 1. A blanket "redact every address-shaped line" rule over-redacted public-business addresses
    (a pizzeria became "100 Lakeshore Demo Drive"), breaking the demo bot's local-recommendations
@@ -21,6 +21,36 @@ Three failure modes captured from a real run (2026-06-29, cottagesconcierge-prod
    independent in-DB read to confirm genuine absence from prose vs. a missed pattern.
 3. `extras` JSONB and manual prose went through the structured-column scan only — address and
    contact data cloned verbatim into prose were missed until the GATE-3 residual scan.
+4. **Owner/host personal names survived the first scrub.** Real names ("Pearson", "Trice") were
+   live in demo chunks and surfaced verbatim by the bot until a rebrand re-ingest fixed them.
+   Names are not credentials — no existing scan category caught them.
+5. **Source brand identity survived the first scrub.** The source property brand ("Pearl Beach",
+   "Lakehurst") persisted in chunks and appeared in bot responses.
+6. **Bare-form gap.** A residual check scoped to "Lakehurst Bungalow" (full form) missed the
+   bare token "Lakehurst" standing alone in prose.
+7. **Owner-name word-list hardcoded in script and in comments.** Real names appeared in TWO
+   code comments even after the runtime list was moved to an env var. Comments survive every
+   redaction pass and become a permanent repo artifact.
+8. **Source-vs-rendered gap.** The brand residual check ran against source text, not the
+   rendered output (the cards/chunks actually written to the DB). It only became trustworthy
+   once scoped to rendered output and made --apply-blocking.
+
+## Hard-won rules
+
+- **Personal-name word-list MUST live in a gitignored env var, never in the script.** This
+  extends to script comments: a real name in a comment (even as an example or placeholder)
+  is a repo artifact that survives every redaction pass. Under `--apply`, hard-fail
+  immediately if the env var is missing or empty — a silent skip means name-scrubbing never
+  ran.
+
+- **Residual and brand checks MUST run against RENDERED output, not source text.** The
+  cards/chunks that will actually be written are what the bot reads. Run the residual grep
+  on those, not on the pre-redaction source. This check must be `--apply-blocking`: a single
+  surviving token aborts the write.
+
+- **For "does this string appear?" questions, a deterministic grep of rendered output is more
+  authoritative than an LLM logic re-read.** Make grep the gate for brand and owner-name
+  tokens; require exactly 0 hits before proceeding.
 
 ## Checklist
 
@@ -43,6 +73,17 @@ Three failure modes captured from a real run (2026-06-29, cottagesconcierge-prod
   street name). Do NOT apply a blanket "flatten every address-shaped line" rule — that
   over-redacts public-business addresses (restaurants, parks, marinas) and breaks the demo
   bot's local recommendations. Target self-location specifically.
+- [ ] **SUBSTITUTE owner/host personal names** — replace any individual named in structured
+  fields (host name, emergency-contact name, sign-off fields, etc.) with a generic demo
+  label such as "the Demo team." Cover first names, surnames, possessives, and name-run
+  sequences (e.g. "John and Sarah Smith" → "the Demo team"). The name word-list MUST come
+  from a gitignored env var — never hardcode it in the script or in comments (see
+  Hard-won rules). Under --apply, hard-fail if that env var is missing or empty.
+- [ ] **SUBSTITUTE brand / business identity** — replace the source property's name(s), DBA,
+  and legal-entity forms in all structured fields (property_name, display_name, etc.) with
+  the demo brand. Check BARE token forms explicitly (e.g. "Lakehurst" as well as "Lakehurst
+  Bungalow"). Preserve genuinely public businesses — do NOT mangle a real public business
+  (e.g. "Lakehouse Inn Winery") that merely shares a token with the source brand.
 - [ ] Scan `extras` JSONB field(s) explicitly — free-form JSONB bypasses column-level checks
   and has caused real GATE-3 HIGH findings when omitted.
 
@@ -51,14 +92,20 @@ Three failure modes captured from a real run (2026-06-29, cottagesconcierge-prod
   pipeline, not just the structured columns.
 - [ ] Scan for: host phone numbers (all formats: (xxx) xxx-xxxx, xxx-xxx-xxxx, +1…), WiFi
   credentials (SSID + password in prose), the property's self-location civic address
-  (street-level), guest emergency contacts, host email addresses.
+  (street-level), guest emergency contacts, host email addresses, **owner/host personal
+  names** (first + last, possessives, name-run sequences, sign-off lines such as "Thank
+  you, <names>"), **source brand / business identity** (property name in full form AND bare
+  bare-token forms).
 - [ ] Preserve: public business names and their addresses, local attraction details, publicly
   known facts about the area.
 - [ ] Perform a residual scan (regex + keyword pass) after redaction. Record hit counts per
   category. Zero hits is not confidence-sufficient on its own — see GATE-5.
 
-**GATE-3 HIGH block:** Any scan finding where `address` or contact-field data was cloned
-verbatim into prose is a HIGH-severity block. Do not proceed to seeding until resolved.
+**GATE-3 HIGH block:** Any scan finding where `address`, contact-field data, owner/host
+personal names, or source brand identity was cloned verbatim into prose is a HIGH-severity
+block. Do not proceed to seeding until resolved. Run the residual scan against RENDERED
+output (the actual cards/chunks to be written to the DB), not the pre-redaction source text;
+make it `--apply-blocking` so a single surviving token aborts the write.
 
 ### GATE-4 — Synthetic activity seeding (if demo needs realistic volume)
 - [ ] Seed conversations, messages, leads, content-gaps, refusals with SYNTHETIC data only:
@@ -90,5 +137,8 @@ verbatim into prose is a HIGH-severity block. Do not proceed to seeding until re
 - [ ] Access-code requests return the tool's normal deferral — codes are NULL; no substituted
   values should appear in any response.
 - [ ] No real host phone, email, WiFi SSID, or WiFi password appears in any chat response.
+- [ ] No real owner/host personal name appears in any chat response.
+- [ ] No source brand or property name (in full or bare-token form) appears in any chat
+  response.
 - [ ] Confirm synthetic activity counts in the analytics endpoint (if applicable) match seeded
   values.
